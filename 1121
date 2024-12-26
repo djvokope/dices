@@ -1,0 +1,207 @@
+from ursina import *
+from random import uniform
+
+from dices import output_text, throw_knopka, update_output_text
+
+
+class Dice(Entity):
+    def __init__(self, position=(0, 10, 0)):
+        super().__init__(
+            model='cube',
+            texture='white_cube',  # Стандартная текстура
+            scale=(1, 1, 1),  # Размер кубика
+            position=position,
+            collider='box',  # Для столкновений
+        )
+        self.velocity = Vec3(0, 0, 0)  # Начальная линейная скорость
+        self.angular_velocity = Vec3(0, 0, 0)  # Начальная угловая скорость
+        self.current_value = 1  # Верхняя грань кубика
+
+        # Добавляем текстовые номера на грани кубика
+        self.add_numbers()
+
+    def add_numbers(self):
+        """Добавляет текстовые номера на грани кубика."""
+        faces = [
+            {'text': '1', 'position': (0, 0, 0.6), 'rotation': (0, 0, 0)},  # Передняя грань
+            {'text': '6', 'position': (0, 0, -0.6), 'rotation': (0, 180, 0)},  # Задняя грань
+            {'text': '3', 'position': (0.6, 0, 0), 'rotation': (0, -90, 0)},  # Правая грань
+            {'text': '4', 'position': (-0.6, 0, 0), 'rotation': (0, 90, 0)},  # Левая грань
+            {'text': '5', 'position': (0, 0.6, 0), 'rotation': (-90, 0, 0)},  # Верхняя грань
+            {'text': '2', 'position': (0, -0.6, 0), 'rotation': (90, 0, 0)},  # Нижняя грань
+        ]
+
+        for face in faces:
+            Text(
+                text=face['text'],  # Номер грани
+                parent=self,  # Делаем текст дочерним объектом кубика
+                position=face['position'],  # Позиция текста
+                rotation=face['rotation'],  # Поворот текста
+                scale=8,  # Увеличиваем размер текста
+                origin=(0, 0),
+                color=color.black,  # Цвет текста
+                background=True  # Включаем фон текста для выделения
+            )
+
+    def calculate_current_value(self):
+        rotation = self.rotation
+        if abs(rotation.x % 360) < 45 and abs(rotation.z % 360) < 45:
+            self.current_value = 1
+        elif 135 < abs(rotation.x % 360) < 225:
+            self.current_value = 6
+        elif 45 < abs(rotation.x % 360) < 135:
+            self.current_value = 5
+        else:
+            self.current_value = 2
+
+    def apply_gravity(self):
+        gravity = 9.8
+        self.velocity.y -= gravity * time.dt
+        self.position += self.velocity * time.dt
+
+        if self.y <= 0.5:
+            self.y = 0.5
+            self.velocity.y *= -0.5
+            self.velocity.x *= 0.8
+            self.velocity.z *= 0.8
+
+    def apply_rotation(self):
+        self.rotation += self.angular_velocity * time.dt
+
+        if self.y <= 0.5:
+            self.angular_velocity *= 0.8
+
+    def check_bounds(self):
+        room_bounds = 20
+        bounce_factor = 0.7
+
+        if self.x > room_bounds:
+            self.x = room_bounds
+            self.velocity.x *= -bounce_factor
+        elif self.x < -room_bounds:
+            self.x = -room_bounds
+            self.velocity.x *= -bounce_factor
+
+        if self.z > room_bounds:
+            self.z = room_bounds
+            self.velocity.z *= -bounce_factor
+        elif self.z < -room_bounds:
+            self.z = -room_bounds
+            self.velocity.z *= -bounce_factor
+
+        if self.y < 0.5:
+            self.y = 0.5
+            self.velocity.y *= -bounce_factor
+
+    def update(self):
+        self.apply_gravity()
+        self.apply_rotation()
+        self.check_bounds()
+
+        if self.y <= 0.5 and self.velocity.length() < 0.1 and self.angular_velocity.length() < 0.5:
+            self.calculate_current_value()
+
+
+app = Ursina()
+
+ground = Entity(
+    model='plane',
+    texture='grass',
+    scale=(40, 1, 40),
+    collider='box',
+)
+
+max_dices = 6
+dices = [Dice(position=(0, 10, 0))]
+
+output_text = Text(
+    text='Результат:',
+    position=(0,-0.45),
+    origin=(0,0),
+    scale=2,
+    color=color.white,
+    background=True
+)
+def update_output_text():
+    total_score = sum(dice.current_value for dice in dices)
+    if len(dices) ==1:
+        output_text.text=f'На кубике выпало: {total_score}'
+    else:
+        output_text.text = f'На кубиках выпало: {total_score}'
+
+def throw():
+    for dice in dices:
+        dice.velocity = Vec3(uniform(-10, 10), uniform(5, 15), uniform(-10, 10))
+        dice.angular_velocity = Vec3(uniform(-100, 100), uniform(-100, 100), uniform(-100, 100))
+        invoke(update_output_text, delay=2)
+
+def create():
+    global dices
+    if len(dices) < max_dices:
+        new_dice = Dice(position=(uniform(-5, 5), 10, uniform(-5, 5)))
+        dices.append(new_dice)
+        update_output_text()
+
+def remove():
+    global dices
+    if len(dices) > 1:
+        dices[-1].disable()
+        dices.pop()
+        update_output_text()
+
+def calculate_score():
+    total_score = sum(dice.current_value for dice in dices)
+    print(f'Результат: {total_score}')
+    for i, dice in enumerate(dices):
+        print(f'Кубик{i+1}:{dice.current_value}')
+
+def input(key):
+    global dices
+    if key =='space':
+        throw()
+    if key =='n':
+        create()
+    if key =='m':
+        remove()
+    if key =='r':
+        calculate_score()
+
+throw_knopka = Button(
+    text ='Подбросить',
+    position = (0.7, -0.4),
+    scale = (0.2, 0.1),
+    color=color.azure,
+    on_click=throw
+)
+
+create_knopka = Button(
+    text ='Создать кубик',
+    position = (-0.7, 0.4),
+    scale = (0.2, 0.1),
+    color=color.orange,
+    on_click=create
+)
+
+remove_knopka = Button(
+    text ='Удалить кубик',
+    position = (-0.45, 0.4),
+    scale = (0.2, 0.1),
+    color=color.red,
+    on_click=remove
+)
+
+schet_knopka = Button(
+    text ='Обновить результат',
+    position = (-0.7, 0),
+    scale = (0.2, 0.1),
+    color=color.green,
+    on_click=update_output_text
+)
+
+# Настройки камеры
+camera.position = (20, 25, -20)
+camera.rotation = (35, -45, 0)
+
+
+update_output_text()
+app.run()
